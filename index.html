@@ -653,22 +653,16 @@ function fmtCD(s){if(s<=0)return'';const m=Math.floor(s/60),r=s%60;return m>0?`$
 let kevSet=new Set(),kevLoaded=false;
 async function loadKEV(){
   if(kevLoaded)return;
-  // Try CISA direct first (has CORS headers, no proxy needed)
-  // Fall back to worker if direct fails
-  const urls=[CISA_KEV_URL, `${WORKER}/kev`];
-  for(const url of urls){
-    try{
-      const r=await fetch(url);
-      if(!r.ok)continue;
-      const j=await r.json();
-      (j.vulnerabilities||[]).forEach(v=>kevSet.add(v.cveID));
-      kevLoaded=true;
-      console.log(`KEV loaded: ${kevSet.size} entries from ${url}`);
-      if(Object.keys(vendorData).length)reRenderAll();
-      return;
-    }catch(e){console.warn('KEV attempt failed:',url,e.message);}
+  try{
+    const r = await fetch(CISA_KEV_URL);
+    if(!r.ok) return;
+    const j = await r.json();
+    (j.vulnerabilities||[]).forEach(v=>kevSet.add(v.cveID));
+    kevLoaded = true;
+    if(Object.keys(vendorData).length) reRenderAll();
+  }catch(e){
+    console.warn('KEV', e);
   }
-  console.warn('KEV: all sources failed');
 }
 
 /* ═══════════════════════════════════════════════
@@ -738,7 +732,7 @@ async function fetchCveById(){
   setStatus('fetching',`⏳ Fetching ${id}…`);
   try{
     const p=new URLSearchParams({cveId:id});
-    const r=await fetch(`${WORKER}/nvd?${p}`);
+    const r=await fetch(`${NVD_BASE}?${p}`);
     if(!r.ok)throw new Error(`NVD HTTP ${r.status}`);
     const j=await r.json();
     const vulns=j.vulnerabilities||[];
@@ -811,7 +805,8 @@ function isRecent14(ds){return ds&&new Date(ds)>=daysAgo(14);}
    Routes: /nvd?<params>  and  /kev
    CISA KEV direct: no proxy needed (has CORS headers)
 ═══════════════════════════════════════════════ */
-const WORKER = 'http://localhost:3000';
+/* DATA SOURCES — direct NVD (no proxy) */
+const NVD_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 const CISA_KEV_URL = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
 
 /* CPE map — vendors where keyword search misses CVEs because
@@ -850,7 +845,7 @@ async function nvdFetchPage(params, signal) {
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   _lastNvdCall = Date.now();
   const p = new URLSearchParams({resultsPerPage: 2000, startIndex: 0, ...params});
-  const r = await fetch(`${WORKER}/nvd?${p}`, {signal});
+  const r = await fetch(`${NVD_BASE}?${p}`, {signal});
   if (r.status === 429) throw new Error('Rate limited — wait 30s then Refresh');
   if (!r.ok) throw new Error(`Worker HTTP ${r.status}`);
   const j = await r.json();
